@@ -1,0 +1,473 @@
+<!DOCTYPE HTML>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+		<link rel="shortcut icon" type="image/png" href="https://cdn.jsdelivr.net/gh/xiangyuecn/Recorder@latest/assets/icon.png">
+
+		<title>录音</title>
+		<!--
+【1】引入框架文件，注意自己使用时应当自己把源码clone下来，然后通过src="/src/recorder-core.js"引入，这里为了方便copy文件测试起见，使用了JsDelivr CDN。
+
+另外：[1.1]、[1.2]可以合并为使用"/recorder.mp3.min.js"，这个文件为压缩版大幅减小文件体积，已经包含了这3个源码文件
+-->
+
+		<!-- 【1.1】引入核心文件 -->
+		<script src="https://cdn.jsdelivr.net/gh/xiangyuecn/Recorder@latest/src/recorder-core.js"></script>
+
+		<!-- 【1.2】引入相应格式支持文件；如果需要多个格式支持，把这些格式的编码引擎js文件放到后面统统加载进来即可 -->
+		<script src="https://cdn.jsdelivr.net/gh/xiangyuecn/Recorder@latest/src/engine/mp3.js"></script>
+		<script src="https://cdn.jsdelivr.net/gh/xiangyuecn/Recorder@latest/src/engine/mp3-engine.js"></script>
+
+		<!-- 【1.3】引入可选的扩展支持项，如果不需要这些扩展功能可以不引入 -->
+		<script src="https://cdn.jsdelivr.net/gh/xiangyuecn/Recorder@latest/src/extensions/frequency.histogram.view.js"></script>
+		<script src="https://cdn.jsdelivr.net/gh/xiangyuecn/Recorder@latest/src/extensions/lib.fft.js"></script>
+		<script src="jQuery-2.1.4.min.js" type="text/javascript" charset="utf-8"></script>
+		
+		<script src="mui.js" type="text/javascript" charset="utf-8"></script>
+		<link rel="stylesheet" type="text/css" href="mui.css" />
+
+
+	</head>
+	<body>
+		<style type="text/css">
+			a,
+			button,
+			input {
+				outline: none;
+				-webkit-tap-highlight-color: rgba(255, 255, 255, 0);
+				-webkit-user-modify: read-write-plaintext-only;
+			}
+
+			body {
+				height: 90vh;
+				display: flex;
+				flex-direction: column;
+				justify-content: center;
+			}
+
+			#recordBox {
+				/* display: none; */
+				width: 100px;
+				border: 1px solid black;
+				margin: 0 auto;
+				text-align: center;
+				margin: 20px auto;
+				padding: 10px;
+				border-radius: 10px;
+				color: rgba(0, 0, 0, 0.6);
+			}
+
+			.btnBoxs {
+				width: 100%;
+				display: flex;
+				flex-wrap: nowrap;
+				justify-content: center;
+				align-items: center;
+			}
+
+			.btnBoxs input {
+				display: inline-block;
+				width: 70px;
+				border: none;
+				border-radius: 5px;
+				margin: 2px;
+				padding: 5px !important;
+				background-color: #409EFF;
+				color: red;
+			}
+
+			.btnBoxs input[disabled] {
+				background-color: rgba(0, 0, 0, 0.1);
+				color: rgba(0, 0, 0, 0.3);
+			}
+
+			.btnBoxs a {
+				font-size: 14px;
+				font-weight: 400;
+				line-height: 1.42;
+				position: relative;
+				display: inline-block;
+				margin-bottom: 0;
+				padding: 5px;
+				cursor: pointer;
+				-webkit-transition: all;
+				transition: all;
+				-webkit-transition-timing-function: linear;
+				transition-timing-function: linear;
+				-webkit-transition-duration: .2s;
+				transition-duration: .2s;
+				text-align: center;
+				vertical-align: top;
+				white-space: nowrap;
+				color: #333;
+				border: 1px solid #ccc;
+				border-radius: 3px;
+				border-top-left-radius: 3px;
+				border-top-right-radius: 3px;
+				border-bottom-right-radius: 3px;
+				border-bottom-left-radius: 3px;
+				background-color: #fff;
+				background-clip: padding-box;
+			}
+
+			.btnBoxs input:active {
+				background-color: #40DDEE;
+			}
+
+			.audioBox {
+				display: flex;
+				flex-wrap: nowrap;
+				justify-content: center;
+				align-items: center;
+				margin-top: 10px;
+			}
+		</style>
+		<!-- 【2】构建界面 -->
+		<div class="main">
+			<div class="mainBox">
+				<!-- 按钮控制区域 -->
+				<div id="recordBox">
+					<span id="timeBox">00:00</span>
+				</div>
+				<div class="btnBoxs">
+					<!-- <input type="button" value="获取录音权限" readonly onclick="openRecord()"> -->
+					<input type="button" value="开始录音" readonly onclick="recStart()" class="mui-btn mui-btn startBtn" disabled>
+					<input type="button" value="结束录音" readonly onclick="recStop()" class="mui-btn mui-btn stopBtn" disabled>
+					<input type="button" value="上传录音" readonly onclick="upLoadRecord()" class="mui-btn mui-btn uploadBtn">
+				</div>
+
+				<div class="audioBox">
+					<audio id="recordAudio" controls nodownload></audio>
+				</div>
+			</div>
+
+			<!-- 日志输出区域 -->
+<!-- 			<div class="mainBox">
+				<div class="reclog"></div>
+			</div> -->
+		</div>
+
+		<script type="text/javascript">
+			var rec;
+			var audioSrc = "";
+			var audio = $("#audioBox")[0];
+			var timeInterval = null;
+			var timeNum = 0;
+
+			var openRecord = function(success) { //一般在显示出录音按钮或相关的录音界面时进行此方法调用，后面用户点击开始录音时就能畅通无阻了
+				rec = Recorder({
+					type: "mp3",
+					sampleRate: 16000,
+					//mp3格式，指定采样率hz、比特率kbps，其他参数使用默认配置；注意：是数字的参数必须提供数字，不要用字符串；需要使用的type类型，需提前把格式支持文件加载进来，比如使用wav格式需要提前加载wav.js编码引擎
+					bitRate: 16,
+					onProcess: function(buffers, powerLevel, bufferDuration, bufferSampleRate, newBufferIdx, asyncEnd) {
+						//录音实时回调，大约1秒调用12次本回调
+						//可利用extensions/waveview.js扩展实时绘制波形
+						//可利用extensions/sonic.js扩展实时变速变调，此扩展计算量巨大，onProcess需要返回true开启异步模式
+					}
+				});
+
+				//打开麦克风授权获得相关资源
+				rec.open(function() {
+					mui.toast("获取录音权限成功");
+					$(".startBtn").attr("disabled", false)
+					$(".startBtn").attr("disabled", false)
+					success && success();
+				}, function(msg, isUserNotAllow) {
+					//用户拒绝未授权或不支持
+					mui.toast((isUserNotAllow ? "UserNotAllow，" : "") + "无法录音:" + msg)
+				});
+			};
+
+			/**开始录音**/
+			openRecord();
+			//打开了录音后才能进行start、stop调用
+			function recStart() {
+				openRecord();
+				timeInterval = null;
+				audioSrc = "";
+				$("#recordAudio").attr("src", audioSrc)
+				$("#recordBox")[0].style.display = "block";
+				$(".startBtn").attr("disabled", true);
+				$(".stopBtn").attr("disabled", false);
+				timeInterval = setInterval(timeBegin, 1000);
+				rec.start();
+			};
+
+			/**结束录音**/
+			function recStop() {
+				rec.stop(function(blob, duration) {
+					//释放录音资源
+					$(".startBtn").attr("disabled", false);
+					$(".stopBtn").attr("disabled", true);
+					timeNum = 0;
+					timeBegin(timeNum);
+					clearInterval(timeInterval);
+					//已经拿到blob文件对象
+					audioSrc = (window.URL || webkitURL).createObjectURL(blob);
+					alert(audioSrc);
+					$("#recordAudio").attr("src", audioSrc)
+					mui.toast("录音成功");
+				}, function(msg) {
+					mui.toast("录音失败:" + msg)
+				});
+			};
+
+			/**上传录音**/
+			function upLoadRecord() {
+				if (!$(".downloadHref")[0]) {
+					$(".btnBoxs").append(`<a href="${audioSrc}" class="downloadHref">下载录音</a>`)
+				}
+			};
+
+			// 开始录音计时
+			function timeBegin() {
+				var minutes = isNeedZero(Math.floor(timeNum / 60));
+				var seconds = isNeedZero(timeNum % 60)
+				$("#timeBox").text(minutes + ":" + seconds);
+				timeNum++;
+			}
+
+			function isNeedZero(num) {
+				if (num < 10) {
+					return "0" + num
+				} else {
+					return num
+				}
+			}
+		</script>
+
+		<!-- 【3】实现录音逻辑 -->
+		<script>
+			var rec, wave, recBlob;
+			/**调用open打开录音请求好录音权限**/
+			var recOpen = function() { //一般在显示出录音按钮或相关的录音界面时进行此方法调用，后面用户点击开始录音时就能畅通无阻了
+				rec = null;
+				wave = null;
+				recBlob = null;
+				var newRec = Recorder({
+					type: "mp3",
+					sampleRate: 16000,
+					//mp3格式，指定采样率hz、比特率kbps，其他参数使用默认配置；注意：是数字的参数必须提供数字，不要用字符串；需要使用的type类型，需提前把格式支持文件加载进来，比如使用wav格式需要提前加载wav.js编码引擎
+					bitRate: 16,
+					onProcess: function(buffers, powerLevel, bufferDuration, bufferSampleRate, newBufferIdx, asyncEnd) {
+
+					}
+				});
+
+				//我们可以选择性的弹一个对话框：为了防止移动端浏览器存在第三种情况：用户忽略，并且（或者国产系统UC系）浏览器没有任何回调，此处demo省略了弹窗的代码
+				createDelayDialog();
+				//打开麦克风授权获得相关资源
+				newRec.open(function() {
+					//如果开启了弹框，此处需要取消	
+					dialogCancel();
+
+					rec = newRec;
+
+					//此处创建这些音频可视化图形绘制浏览器支持妥妥的
+					wave = Recorder.FrequencyHistogramView({
+						elem: ".recwave"
+					});
+
+					reclog("已打开录音，可以点击录制开始录音了", 2);
+					//用户拒绝未授权或不支持
+				}, function(msg, isUserNotAllow) {
+					//如果开启了弹框，此处需要取消
+					dialogCancel();
+					reclog((isUserNotAllow ? "UserNotAllow，" : "") + "打开录音失败：" + msg, 1);
+				});
+
+				window.waitDialogClick = function() {
+					dialogCancel();
+					reclog("打开失败：权限请求被忽略，<span style='color:#f00'>用户主动点击的弹窗</span>", 1);
+				};
+			};
+
+
+
+			/**关闭录音，释放资源**/
+			function recClose() {
+				if (rec) {
+					rec.close();
+					reclog("已关闭");
+				} else {
+					reclog("未打开录音", 1);
+				};
+			};
+
+
+
+			/**开始录音**/
+			// function recStart() {
+			// 	//打开了录音后才能进行start、stop调用
+			// 	if (rec && Recorder.IsOpen()) {
+			// 		recBlob = null;
+			// 		rec.start();
+			// 		reclog("已开始录音...");
+			// 	} else {
+			// 		reclog("未打开录音", 1);
+			// 	};
+			// };
+
+			/**暂停录音**/
+			// function recPause() {
+			// 	if (rec && Recorder.IsOpen()) {
+			// 		rec.pause();
+			// 	} else {
+			// 		reclog("未打开录音", 1);
+			// 	};
+			// };
+			/**恢复录音**/
+			// function recResume() {
+			// 	if (rec && Recorder.IsOpen()) {
+			// 		rec.resume();
+			// 	} else {
+			// 		reclog("未打开录音", 1);
+			// 	};
+			// };
+
+			/**结束录音，得到音频文件**/
+			// function recStop() {
+			// 	if (!(rec && Recorder.IsOpen())) {
+			// 		reclog("未打开录音", 1);
+			// 		return;
+			// 	};
+			// 	rec.stop(function(blob, duration) {
+			// 		console.log(blob, (window.URL || webkitURL).createObjectURL(blob), "时长:" + duration + "ms");
+
+			// 		recBlob = blob;
+			// 		reclog("已录制mp3：" + duration + "ms " + blob.size + "字节，可以点击播放、上传了", 2);
+			// 	}, function(msg) {
+			// 		reclog("录音失败:" + msg, 1);
+			// 	});
+			// };
+
+			/**播放**/
+			// function recPlay() {
+			// 	if (!recBlob) {
+			// 		reclog("请先录音，然后停止后再播放", 1);
+			// 		return;
+			// 	};
+			// 	var cls = ("a" + Math.random()).replace(".", "");
+			// 	reclog('播放中: <span class="' + cls + '"></span>');
+			// 	var audio = document.createElement("audio");
+			// 	audio.controls = true;
+			// 	document.querySelector("." + cls).appendChild(audio);
+			// 	//简单利用URL生成播放地址，注意不用了时需要revokeObjectURL，否则霸占内存
+			// 	audio.src = (window.URL || webkitURL).createObjectURL(recBlob);
+			// 	audio.play();
+
+			// 	setTimeout(function() {
+			// 		(window.URL || webkitURL).revokeObjectURL(audio.src);
+			// 	}, 5000);
+			// };
+
+			/**上传**/
+			// function recUpload() {
+			// 	var blob = recBlob;
+			// 	if (!blob) {
+			// 		reclog("请先录音，然后停止后再上传", 1);
+			// 		return;
+			// 	};
+
+			// 	//本例子假设使用原始XMLHttpRequest请求方式，实际使用中自行调整为自己的请求方式
+			// 	//录音结束时拿到了blob文件对象，可以用FileReader读取出内容，或者用FormData上传
+			// 	var api = "https://xx.xx/test_request";
+			// 	var onreadystatechange = function(title) {
+			// 		return function() {
+			// 			if (xhr.readyState == 4) {
+			// 				if (xhr.status == 200) {
+			// 					reclog(title + "上传成功", 2);
+			// 				} else {
+			// 					reclog(title + "没有完成上传，演示上传地址无需关注上传结果，只要浏览器控制台内Network面板内看到的请求数据结构是预期的就ok了。", "#d8c1a0");
+
+			// 					console.error(title + "上传失败", xhr.status, xhr.responseText);
+			// 				};
+			// 			};
+			// 		};
+			// 	};
+			// 	reclog("开始上传到" + api + "，请求稍后...");
+
+			// 	/***方式一：将blob文件转成base64纯文本编码，使用普通application/x-www-form-urlencoded表单上传***/
+			// 	var reader = new FileReader();
+			// 	reader.onloadend = function() {
+			// 		var postData = "";
+			// 		postData += "mime=" + encodeURIComponent(blob.type); //告诉后端，这个录音是什么格式的，可能前后端都固定的mp3可以不用写
+			// 		postData += "&upfile_b64=" + encodeURIComponent((/.+;\s*base64\s*,\s*(.+)$/i.exec(reader.result) || [])[1]) //录音文件内容，后端进行base64解码成二进制
+			// 		//...其他表单参数
+
+			// 		var xhr = new XMLHttpRequest();
+			// 		xhr.open("POST", api);
+			// 		xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+			// 		xhr.onreadystatechange = onreadystatechange("上传方式一【Base64】");
+			// 		xhr.send(postData);
+			// 	};
+			// 	reader.readAsDataURL(blob);
+
+			// 	/***方式二：使用FormData用multipart/form-data表单上传文件***/
+			// 	var form = new FormData();
+			// 	form.append("upfile", blob, "recorder.mp3"); //和普通form表单并无二致，后端接收到upfile参数的文件，文件名为recorder.mp3
+			// 	//...其他表单参数
+
+			// 	var xhr = new XMLHttpRequest();
+			// 	xhr.open("POST", api);
+			// 	xhr.onreadystatechange = onreadystatechange("上传方式二【FormData】");
+			// 	xhr.send(form);
+			// };
+
+			//recOpen我们可以选择性的弹一个对话框：为了防止移动端浏览器存在第三种情况：用户忽略，并且（或者国产系统UC系）浏览器没有任何回调
+			var showDialog = function() {
+				if (!/mobile/i.test(navigator.userAgent)) {
+					return; //只在移动端开启没有权限请求的检测
+				};
+				dialogCancel();
+
+				//显示弹框，应该使用自己的弹框方式
+				var div = document.createElement("div");
+				document.body.appendChild(div);
+				div.innerHTML = ('' +
+					'<div class="waitDialog" style="z-index:99999;width:100%;height:100%;top:0;left:0;position:fixed;background:rgba(0,0,0,0.3);">' +
+					'<div style="display:flex;height:100%;align-items:center;">' +
+					'<div style="flex:1;"></div>' +
+					'<div style="width:240px;background:#fff;padding:15px 20px;border-radius: 10px;">' +
+					'<div style="padding-bottom:10px;">录音功能需要麦克风权限，请允许；如果未看到任何请求，请点击忽略~</div>' +
+					'<div style="text-align:center;"><a onclick="waitDialogClick()" style="color:#0B1">忽略</a></div>' +
+					'</div>' +
+					'<div style="flex:1;"></div>' +
+					'</div>' +
+					'</div>');
+			};
+			var createDelayDialog = function() {
+				dialogInt = setTimeout(function() { //定时8秒后打开弹窗，用于监测浏览器没有发起权限请求的情况，在open前放置定时器利于收到了回调能及时取消（不管open是同步还是异步回调的）
+					showDialog();
+				}, 8000);
+			};
+			var dialogInt;
+			var dialogCancel = function() {
+				clearTimeout(dialogInt);
+
+				//关闭弹框，应该使用自己的弹框方式
+				var elems = document.querySelectorAll(".waitDialog");
+				for (var i = 0; i < elems.length; i++) {
+					elems[i].parentNode.removeChild(elems[i]);
+				};
+			};
+		</script>
+
+		<!--以下这坨可以忽略-->
+		<script>
+			function reclog(s, color) {
+				var now = new Date();
+				var t = ("0" + now.getHours()).substr(-2) +
+					":" + ("0" + now.getMinutes()).substr(-2) +
+					":" + ("0" + now.getSeconds()).substr(-2);
+				var div = document.createElement("div");
+				var elem = document.querySelector(".reclog");
+				elem.insertBefore(div, elem.firstChild);
+				div.innerHTML = '<div style="color:' + (!color ? "" : color == 1 ? "red" : color == 2 ? "#0b1" : color) + '">[' + t +
+					']' + s + '</div>';
+			};
+		</script>
+	</body>
+</html>
